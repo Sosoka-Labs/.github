@@ -1,0 +1,76 @@
+# Reusable workflow for deploying static sites to AWS (S3 + CloudFront)
+# Store in: Sosoka-Labs/.github/.github/workflows/deploy-static-site.yml
+#
+# Usage in app repos:
+#   jobs:
+#     deploy:
+#       uses: Sosoka-Labs/.github/.github/workflows/deploy-static-site.yml@main
+#       with:
+#         environment: staging
+#         s3-bucket: my-app-staging
+#         cloudfront-alias: staging.myapp.sosoka.io
+#       secrets: inherit
+
+name: Deploy Static Site
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Deployment environment (staging or production)'
+        required: true
+        type: string
+      s3-bucket:
+        description: 'S3 bucket name'
+        required: true
+        type: string
+      cloudfront-alias:
+        description: 'CloudFront domain alias for cache invalidation lookup'
+        required: true
+        type: string
+      aws-region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'us-west-2'
+      artifact-name:
+        description: 'Name of the build artifact to download'
+        required: false
+        type: string
+        default: 'static-site'
+      artifact-path:
+        description: 'Path where artifact was uploaded from'
+        required: false
+        type: string
+        default: 'out'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.artifact-path }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.environment == 'production' && 'arn:aws:iam::029939913585:role/github-actions-sosoka-labs' || 'arn:aws:iam::744376746644:role/github-actions-sosoka-labs' }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Sync to S3
+        run: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }} --delete
+
+      - name: Invalidate CloudFront
+        run: |
+          DIST_ID=$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Aliases.Items[?contains(@,'${{ inputs.cloudfront-alias }}')]].Id" \
+            --output text)
+          if [ -n "$DIST_ID" ] && [ "$DIST_ID" != "None" ]; then
+            aws cloudfront create-invalidation --distribution-id $DIST_ID --paths "/*"
+          else
+            echo "Warning: No CloudFront distribution found for ${{ inputs.cloudfront-alias }}"
+          fi

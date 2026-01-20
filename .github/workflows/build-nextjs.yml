@@ -1,0 +1,73 @@
+# Reusable workflow for building Next.js static sites
+# Store in: Sosoka-Labs/.github/.github/workflows/build-nextjs.yml
+#
+# Usage in app repos:
+#   jobs:
+#     build:
+#       uses: Sosoka-Labs/.github/.github/workflows/build-nextjs.yml@main
+#       with:
+#         working-directory: website
+#         node-version: '20'
+
+name: Build Next.js
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing package.json'
+        required: false
+        type: string
+        default: '.'
+      node-version:
+        description: 'Node.js version'
+        required: false
+        type: string
+        default: '20'
+      artifact-name:
+        description: 'Name for the build artifact'
+        required: false
+        type: string
+        default: 'static-site'
+      output-directory:
+        description: 'Build output directory (relative to working-directory)'
+        required: false
+        type: string
+        default: 'out'
+      build-command:
+        description: 'Build command to run'
+        required: false
+        type: string
+        default: 'npm run build'
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ inputs.artifact-name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'npm'
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: npm ci
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.build-command }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.working-directory }}/${{ inputs.output-directory }}
+          retention-days: 1
