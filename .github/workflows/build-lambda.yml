@@ -1,0 +1,117 @@
+# Reusable workflow: Build Python Lambda packages
+# Usage:
+#   jobs:
+#     build:
+#       uses: Sosoka-Labs/.github/.github/workflows/build-lambda.yml@main
+#       with:
+#         lambdas: 'contact-api,contact-processor'
+
+name: Build Lambda
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.12'
+      working-directory:
+        description: 'Working directory for commands'
+        required: false
+        type: string
+        default: '.'
+      lambdas:
+        description: 'Comma-separated list of Lambda names to build'
+        required: true
+        type: string
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: lambda-packages
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: '1.8.2'
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install poetry export plugin
+        run: poetry self add poetry-plugin-export
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.working-directory }}/.venv
+          key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build Lambda packages
+        run: |
+          # Export production dependencies
+          poetry export -f requirements.txt --without-hashes -o requirements.txt
+
+          # Create temp build directory
+          BUILD_DIR=$(mktemp -d)
+
+          # Install dependencies to build directory
+          pip install -r requirements.txt -t "$BUILD_DIR" --quiet
+
+          # Copy source code
+          cp -r src/* "$BUILD_DIR/"
+
+          # Build each Lambda package
+          IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
+          for lambda in "${LAMBDAS[@]}"; do
+            lambda=$(echo "$lambda" | xargs)  # trim whitespace
+            echo "Building $lambda..."
+
+            # Create zip (exclude __pycache__ and .pyc files)
+            cd "$BUILD_DIR"
+            zip -r "$GITHUB_WORKSPACE/${{ inputs.working-directory }}/dist/${lambda}.zip" . \
+              -x "*.pyc" \
+              -x "*__pycache__*" \
+              -x "*.pyo" \
+              -x "*.pyd" \
+              -x "tests/*" \
+              -x "*.egg-info/*"
+            cd -
+
+            echo "Built dist/${lambda}.zip"
+          done
+
+          # List built packages
+          ls -lh dist/
+
+      - name: Upload Lambda packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: lambda-packages
+          path: ${{ inputs.working-directory }}/dist/*.zip
+          retention-days: 5

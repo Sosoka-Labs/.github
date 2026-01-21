@@ -1,0 +1,111 @@
+# Reusable workflow: Deploy Python Lambda packages to AWS
+# Usage:
+#   jobs:
+#     deploy:
+#       uses: Sosoka-Labs/.github/.github/workflows/deploy-lambda.yml@main
+#       with:
+#         environment: staging
+#         lambdas: 'contact-api,contact-processor'
+#         s3-bucket: sosoka-api-artifacts-staging
+#         aws-region: us-west-2
+#       secrets: inherit
+
+name: Deploy Lambda
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Deployment environment (staging/production)'
+        required: true
+        type: string
+      lambdas:
+        description: 'Comma-separated list of Lambda names to deploy'
+        required: true
+        type: string
+      s3-bucket:
+        description: 'S3 bucket for Lambda artifacts'
+        required: true
+        type: string
+      aws-region:
+        description: 'AWS region'
+        required: false
+        type: string
+        default: 'us-west-2'
+      artifact-name:
+        description: 'Name of the artifact containing Lambda packages'
+        required: false
+        type: string
+        default: 'lambda-packages'
+    secrets:
+      AWS_ROLE_ARN:
+        description: 'AWS IAM Role ARN for OIDC authentication'
+        required: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download Lambda packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: dist/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Upload packages to S3
+        run: |
+          IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
+          for lambda in "${LAMBDAS[@]}"; do
+            lambda=$(echo "$lambda" | xargs)  # trim whitespace
+            echo "Uploading ${lambda}.zip to s3://${{ inputs.s3-bucket }}/"
+            aws s3 cp "dist/${lambda}.zip" "s3://${{ inputs.s3-bucket }}/${lambda}.zip"
+          done
+
+      - name: Update Lambda functions
+        run: |
+          IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
+          for lambda in "${LAMBDAS[@]}"; do
+            lambda=$(echo "$lambda" | xargs)  # trim whitespace
+            function_name="${lambda}-${{ inputs.environment }}"
+            echo "Updating Lambda function: ${function_name}"
+
+            aws lambda update-function-code \
+              --function-name "${function_name}" \
+              --s3-bucket "${{ inputs.s3-bucket }}" \
+              --s3-key "${lambda}.zip" \
+              --region "${{ inputs.aws-region }}"
+
+            # Wait for update to complete
+            echo "Waiting for function update to complete..."
+            aws lambda wait function-updated \
+              --function-name "${function_name}" \
+              --region "${{ inputs.aws-region }}"
+
+            echo "Successfully updated ${function_name}"
+          done
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+          echo "**S3 Bucket:** ${{ inputs.s3-bucket }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployed Lambdas" >> $GITHUB_STEP_SUMMARY
+          IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
+          for lambda in "${LAMBDAS[@]}"; do
+            lambda=$(echo "$lambda" | xargs)
+            echo "- ${lambda}-${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          done
