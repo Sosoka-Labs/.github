@@ -39,11 +39,6 @@ on:
         required: false
         type: string
         default: 'npm run build'
-      ga-measurement-id:
-        description: 'Google Analytics measurement ID (optional)'
-        required: false
-        type: string
-        default: ''
       analytics-enabled:
         description: 'Enable analytics in build (true/false)'
         required: false
@@ -54,6 +49,10 @@ on:
         required: false
         type: string
         default: ''
+    secrets:
+      ga-measurement-id:
+        description: 'Google Analytics measurement ID (optional)'
+        required: false
     outputs:
       artifact-name:
         description: 'Name of the uploaded artifact'
@@ -79,7 +78,7 @@ jobs:
       - name: Build
         working-directory: ${{ inputs.working-directory }}
         env:
-          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ inputs.ga-measurement-id }}
+          NEXT_PUBLIC_GA_MEASUREMENT_ID: ${{ secrets.ga-measurement-id }}
           NEXT_PUBLIC_ANALYTICS_ENABLED: ${{ inputs.analytics-enabled }}
           NEXT_PUBLIC_SITE_URL: ${{ inputs.site-url }}
         run: ${{ inputs.build-command }}
