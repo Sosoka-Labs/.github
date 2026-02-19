@@ -64,6 +64,24 @@ jobs:
       - name: Sync to S3
         run: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }} --delete
 
+      - name: Fix Content-Type for Next.js metadata images
+        run: |
+          # Next.js generates opengraph-image and twitter-image as extensionless PNGs.
+          # S3 defaults to binary/octet-stream without an extension, so re-upload
+          # with the correct Content-Type so social platforms can render them.
+          BUCKET="s3://${{ inputs.s3-bucket }}"
+          for pattern in opengraph-image twitter-image; do
+            FILES=$(aws s3 ls "$BUCKET/" --recursive | grep "$pattern" | awk '{print $4}' || true)
+            for key in $FILES; do
+              if [ -n "$key" ]; then
+                echo "Fixing Content-Type: $key -> image/png"
+                aws s3 cp "$BUCKET/$key" "$BUCKET/$key" \
+                  --content-type "image/png" \
+                  --metadata-directive REPLACE
+              fi
+            done
+          done
+
       - name: Invalidate CloudFront
         run: |
           DIST_ID=$(aws cloudfront list-distributions \
