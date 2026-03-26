@@ -75,25 +75,34 @@ jobs:
       - name: Build Lambda packages
         run: |
           # Export production dependencies
-          poetry export -f requirements.txt --without-hashes -o requirements.txt
+          poetry export -f requirements.txt --without-hashes --without dev -o requirements.txt
 
           # Create temp build directory
           BUILD_DIR=$(mktemp -d)
 
           # Install dependencies to build directory
-          pip install -r requirements.txt -t "$BUILD_DIR" --quiet
+          pip install -r requirements.txt -t "$BUILD_DIR" \
+            --platform manylinux2014_aarch64 \
+            --only-binary=:all: \
+            --python-version 3.12 \
+            --implementation cp \
+            --quiet
 
-          # Copy source code
-          cp -r src/* "$BUILD_DIR/"
-
-          # Build each Lambda package
+          # Build each Lambda package with only shared + specific Lambda code
           IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
           for lambda in "${LAMBDAS[@]}"; do
             lambda=$(echo "$lambda" | xargs)  # trim whitespace
+            lambda_dir=$(echo "$lambda" | tr '-' '_')
             echo "Building $lambda..."
 
+            # Create per-Lambda staging dir with deps + shared + specific code
+            LAMBDA_STAGE=$(mktemp -d)
+            cp -r "$BUILD_DIR"/. "$LAMBDA_STAGE/"
+            cp -r src/shared "$LAMBDA_STAGE/"
+            cp -r "src/${lambda_dir}" "$LAMBDA_STAGE/"
+
             # Create zip (exclude __pycache__ and .pyc files)
-            cd "$BUILD_DIR"
+            cd "$LAMBDA_STAGE"
             zip -r "$GITHUB_WORKSPACE/${{ inputs.working-directory }}/dist/${lambda}.zip" . \
               -x "*.pyc" \
               -x "*__pycache__*" \
