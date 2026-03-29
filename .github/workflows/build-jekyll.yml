@@ -1,0 +1,86 @@
+# Reusable workflow for building Jekyll static sites
+# Store in: Sosoka-Labs/.github/.github/workflows/build-jekyll.yml
+#
+# Usage in app repos:
+#   jobs:
+#     build:
+#       uses: Sosoka-Labs/.github/.github/workflows/build-jekyll.yml@main
+#       with:
+#         working-directory: website
+#         ruby-version: '3.3'
+
+name: Build Jekyll
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Directory containing Gemfile'
+        required: false
+        type: string
+        default: '.'
+      ruby-version:
+        description: 'Ruby version'
+        required: false
+        type: string
+        default: '3.3'
+      artifact-name:
+        description: 'Name for the build artifact'
+        required: false
+        type: string
+        default: 'static-site'
+      output-directory:
+        description: 'Build output directory (relative to working-directory)'
+        required: false
+        type: string
+        default: '_site'
+      build-command:
+        description: 'Build command to run'
+        required: false
+        type: string
+        default: 'bundle exec jekyll build'
+      site-url:
+        description: 'Site URL for JEKYLL_URL (optional, sets JEKYLL_ENV=production)'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      ga-measurement-id:
+        description: 'Google Analytics measurement ID (optional)'
+        required: false
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ inputs.artifact-name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ inputs.ruby-version }}
+          bundler-cache: true
+          working-directory: ${{ inputs.working-directory }}
+
+      - name: Install dependencies
+        working-directory: ${{ inputs.working-directory }}
+        run: bundle install
+
+      - name: Build
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          JEKYLL_ENV: ${{ inputs.site-url != '' && 'production' || 'development' }}
+          JEKYLL_URL: ${{ inputs.site-url }}
+          GA_MEASUREMENT_ID: ${{ secrets.ga-measurement-id }}
+        run: ${{ inputs.build-command }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact-name }}
+          path: ${{ inputs.working-directory }}/${{ inputs.output-directory }}
+          retention-days: 1

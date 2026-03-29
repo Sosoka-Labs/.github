@@ -14,6 +14,7 @@ Shared CI/CD workflows for Sosoka-Labs repositories.
 | `build-lambda.yml` | Build Python Lambda packages |
 | `deploy-lambda.yml` | Deploy Lambda packages to AWS |
 | `build-nextjs.yml` | Build Next.js static sites |
+| `build-jekyll.yml` | Build Jekyll static sites |
 | `deploy-static-site.yml` | Deploy to S3 + CloudFront |
 
 ## Python Lambda Workflows
@@ -149,6 +150,45 @@ jobs:
     with:
       working-directory: website
 ```
+
+### Build Jekyll
+
+Builds Jekyll static sites with Ruby and Bundler.
+
+```yaml
+jobs:
+  build:
+    uses: Sosoka-Labs/.github/.github/workflows/build-jekyll.yml@main
+    with:
+      working-directory: website
+      site-url: ${{ github.ref == 'refs/heads/main' && 'https://myapp.sosoka.io' || 'https://staging.myapp.sosoka.io' }}
+    secrets:
+      ga-measurement-id: ${{ secrets.GA_MEASUREMENT_ID }}
+```
+
+**Inputs:**
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `working-directory` | No | `'.'` | Directory containing Gemfile |
+| `ruby-version` | No | `'3.3'` | Ruby version |
+| `build-command` | No | `'bundle exec jekyll build'` | Build command |
+| `output-directory` | No | `'_site'` | Build output directory |
+| `artifact-name` | No | `'static-site'` | Artifact name for upload |
+| `site-url` | No | `''` | Sets `JEKYLL_URL` and enables `JEKYLL_ENV=production` |
+
+**Secrets:**
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `ga-measurement-id` | No | GA4 measurement ID — exposed as `GA_MEASUREMENT_ID` env var |
+
+**Outputs:**
+| Output | Description |
+|--------|-------------|
+| `artifact-name` | Name of the uploaded artifact |
+
+**Notes:**
+- `JEKYLL_ENV` is automatically set to `production` when `site-url` is provided, `development` otherwise
+- `GA_MEASUREMENT_ID` is available as an environment variable during build for use in Jekyll config or layouts
 
 ### Deploy Static Site
 
