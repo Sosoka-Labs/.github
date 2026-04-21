@@ -123,4 +123,4 @@ jobs:
         with:
           name: lambda-packages
           path: ${{ inputs.working-directory }}/dist/*.zip
-          retention-days: 5
+          retention-days: 1
