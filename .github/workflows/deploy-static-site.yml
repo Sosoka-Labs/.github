@@ -34,7 +34,7 @@ on:
         type: string
         default: 'us-west-2'
       artifact-name:
-        description: 'Name of the build artifact to download'
+        description: 'Name of the build artifact (used in S3 path)'
         required: false
         type: string
         default: 'static-site'
@@ -43,23 +43,30 @@ on:
         required: false
         type: string
         default: 'out'
+      repo-name:
+        description: 'Repository name (for S3 artifact path)'
+        required: false
+        type: string
+        default: ${{ github.event.repository.name }}
+      run-id:
+        description: 'GitHub run ID (for S3 artifact path)'
+        required: false
+        type: string
+        default: ${{ github.run_id }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.artifact-name }}
-          path: ${{ inputs.artifact-path }}
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ inputs.environment == 'production' && 'arn:aws:iam::029939913585:role/github-actions-sosoka-labs' || 'arn:aws:iam::744376746644:role/github-actions-sosoka-labs' }}
           aws-region: ${{ inputs.aws-region }}
+
+      - name: Download build from S3
+        run: aws s3 sync s3://sosoka-labs-build-artifacts/${{ inputs.repo-name }}/${{ inputs.run-id }}/out/ ${{ inputs.artifact-path }}/
 
       - name: Sync to S3
         run: aws s3 sync ${{ inputs.artifact-path }}/ s3://${{ inputs.s3-bucket }} --delete
