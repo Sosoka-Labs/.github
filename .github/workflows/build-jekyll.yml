@@ -78,9 +78,11 @@ jobs:
           GA_MEASUREMENT_ID: ${{ secrets.ga-measurement-id }}
         run: ${{ inputs.build-command }}
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          name: ${{ inputs.artifact-name }}
-          path: ${{ inputs.working-directory }}/${{ inputs.output-directory }}
-          retention-days: 1
+          role-to-assume: arn:aws:iam::744376746644:role/github-actions-sosoka-labs
+          aws-region: us-west-2
+
+      - name: Upload build to S3
+        run: aws s3 sync ${{ inputs.working-directory }}/${{ inputs.output-directory }}/ s3://sosoka-labs-build-artifacts/${{ github.event.repository.name }}/${{ github.run_id }}/out/
