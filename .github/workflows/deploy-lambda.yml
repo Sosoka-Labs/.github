@@ -37,10 +37,16 @@ on:
         required: false
         type: string
         default: 'lambda-packages'
-    secrets:
-      AWS_ROLE_ARN:
-        description: 'AWS IAM Role ARN for OIDC authentication'
-        required: true
+      repo-name:
+        description: 'Repository name (for S3 artifact path)'
+        required: false
+        type: string
+        default: ${{ github.event.repository.name }}
+      run-id:
+        description: 'GitHub run ID (for S3 artifact path)'
+        required: false
+        type: string
+        default: ${{ github.run_id }}
 
 jobs:
   deploy:
@@ -51,17 +57,14 @@ jobs:
       contents: read
 
     steps:
-      - name: Download Lambda packages
-        uses: actions/download-artifact@v8
-        with:
-          name: ${{ inputs.artifact-name }}
-          path: dist/
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          role-to-assume: arn:aws:iam::744376746644:role/github-actions-sosoka-labs
           aws-region: ${{ inputs.aws-region }}
+
+      - name: Download Lambda packages from S3
+        run: aws s3 sync s3://sosoka-labs-build-artifacts/${{ inputs.repo-name }}/${{ inputs.run-id }}/lambda-packages/ dist/
 
       - name: Upload packages to S3
         run: |

@@ -118,9 +118,11 @@ jobs:
           # List built packages
           ls -lh dist/
 
-      - name: Upload Lambda packages
-        uses: actions/upload-artifact@v7
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
         with:
-          name: lambda-packages
-          path: ${{ inputs.working-directory }}/dist/*.zip
-          retention-days: 1
+          role-to-assume: arn:aws:iam::744376746644:role/github-actions-sosoka-labs
+          aws-region: us-west-2
+
+      - name: Upload Lambda packages to S3
+        run: aws s3 sync ${{ inputs.working-directory }}/dist/ s3://sosoka-labs-build-artifacts/${{ github.event.repository.name }}/${{ github.run_id }}/lambda-packages/
