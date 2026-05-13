@@ -7,48 +7,55 @@
 #         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 #
 #   Optional inputs:
-#     auto-review: true    # Review on PR open / synchronize
-#     auto-improve: false # Suggest code improvements
-#     auto-describe: false # Auto-generate PR description
+#     timeout-minutes: 10
+#     include_extensions: '.py,.js,.ts,.tsx,.go,.rs,.java,.kt,.swift,.rb,.php,.c,.cpp,.h,.hpp,.cs,.scala,.r,.m,.mm'
+#     exclude_paths: 'node_modules/,dist/,build/,vendor/,target/,out/,.next/,coverage/,*.min.js,*.min.css,package-lock.json,yarn.lock,poetry.lock,Cargo.lock,go.sum,__tests__/,test/,tests/,fixtures/,mocks/,*.generated.*'
 
 name: AI Code Review
 
 on:
   workflow_call:
     inputs:
-      auto-review:
-        description: 'Run review automatically on PR open / synchronize'
+      timeout-minutes:
+        description: 'Job timeout in minutes'
         required: false
-        type: boolean
-        default: true
-      auto-improve:
-        description: 'Suggest code improvements automatically'
+        type: number
+        default: 10
+      include_extensions:
+        description: 'Comma-separated list of file extensions to include'
         required: false
-        type: boolean
-        default: false
-      auto-describe:
-        description: 'Auto-generate PR description'
+        type: string
+        default: '.py,.js,.ts,.tsx,.go,.rs,.java,.kt,.swift,.rb,.php,.c,.cpp,.h,.hpp,.cs,.scala,.r,.m,.mm'
+      exclude_paths:
+        description: 'Comma-separated list of paths/patterns to exclude'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: 'node_modules/,dist/,build/,vendor/,target/,out/,.next/,coverage/,*.min.js,*.min.css,package-lock.json,yarn.lock,poetry.lock,Cargo.lock,go.sum,__tests__/,test/,tests/,fixtures/,mocks/,*.generated.*'
     secrets:
       OPENAI_API_KEY:
-        description: 'OpenAI API key for PR-Agent'
+        description: 'OpenAI API key'
         required: true
 
 jobs:
-  pr_agent:
+  review:
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
-      issues: write
+      contents: read
       pull-requests: write
-      contents: write
     steps:
-      - name: Run PR Agent
-        uses: Codium-ai/pr-agent@main
-        env:
-          OPENAI_KEY: ${{ secrets.OPENAI_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          github_action.auto_review: ${{ inputs.auto-review }}
-          github_action.auto_improve: ${{ inputs.auto-improve }}
-          github_action.auto_describe: ${{ inputs.auto-describe }}
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: AI Code Review
+        uses: AleksandrFurmenkovOfficial/ai-code-review@v1.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ai_provider: 'openai'
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          openai_model: 'gpt-4o'
+          owner: ${{ github.repository_owner }}
+          repo: ${{ github.event.repository.name }}
+          pr_number: ${{ github.event.number }}
+          include_extensions: ${{ inputs.include_extensions }}
+          exclude_paths: ${{ inputs.exclude_paths }}
