@@ -16,6 +16,50 @@ Shared CI/CD workflows for Sosoka-Labs repositories.
 | `build-nextjs.yml` | Build Next.js static sites |
 | `build-jekyll.yml` | Build Jekyll static sites |
 | `deploy-static-site.yml` | Deploy to S3 + CloudFront |
+| `ai-code-review.yml` | AI-powered PR review via PR-Agent |
+
+## AI Code Review
+
+Automated code review using [Qodo PR-Agent](https://github.com/Codium-ai/pr-agent). Runs on PR open/synchronize and via comment commands (`/review`, `/improve`, `/describe`).
+
+### Quick Start
+
+```yaml
+name: Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+  issue_comment:
+
+jobs:
+  ai-review:
+    uses: Sosoka-Labs/.github/.github/workflows/ai-code-review.yml@main
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+**Inputs:**
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `auto-review` | No | `true` | Review automatically on PR open/synchronize |
+| `auto-improve` | No | `false` | Suggest code improvements automatically |
+| `auto-describe` | No | `false` | Auto-generate PR description |
+
+**Secrets:**
+
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `OPENAI_API_KEY` | Yes | OpenAI API key passed from caller repo |
+
+### Comment Commands
+
+Once enabled, you can trigger PR-Agent manually on any PR by commenting:
+
+- `/review` — Request a code review
+- `/improve` — Request code improvement suggestions
+- `/describe` — Auto-generate or update PR description
+- `/ask <question>` — Ask a question about the PR
 
 ## Python Lambda Workflows
 
