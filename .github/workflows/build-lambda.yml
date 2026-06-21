@@ -1,0 +1,128 @@
+# Reusable workflow: Build Python Lambda packages
+# Usage:
+#   jobs:
+#     build:
+#       uses: Sosoka-Labs/.github/.github/workflows/build-lambda.yml@main
+#       with:
+#         lambdas: 'contact-api,contact-processor'
+
+name: Build Lambda
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.12'
+      working-directory:
+        description: 'Working directory for commands'
+        required: false
+        type: string
+        default: '.'
+      lambdas:
+        description: 'Comma-separated list of Lambda names to build'
+        required: true
+        type: string
+    outputs:
+      artifact-name:
+        description: 'Name of the uploaded artifact'
+        value: ${{ jobs.build.outputs.artifact-name }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-name: lambda-packages
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: '1.8.2'
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Install poetry export plugin
+        run: poetry self add poetry-plugin-export@1.7.1
+
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ inputs.working-directory }}/.venv
+          key: venv-${{ runner.os }}-${{ inputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+        run: poetry install --no-interaction
+
+      - name: Create dist directory
+        run: mkdir -p dist
+
+      - name: Build Lambda packages
+        run: |
+          # Export production dependencies
+          poetry export -f requirements.txt --without-hashes --without dev -o requirements.txt
+
+          # Create temp build directory
+          BUILD_DIR=$(mktemp -d)
+
+          # Install dependencies to build directory
+          pip install -r requirements.txt -t "$BUILD_DIR" \
+            --platform manylinux2014_aarch64 \
+            --only-binary=:all: \
+            --python-version 3.12 \
+            --implementation cp \
+            --quiet
+
+          # Build each Lambda package with only shared + specific Lambda code
+          IFS=',' read -ra LAMBDAS <<< "${{ inputs.lambdas }}"
+          for lambda in "${LAMBDAS[@]}"; do
+            lambda=$(echo "$lambda" | xargs)  # trim whitespace
+            lambda_dir=$(echo "$lambda" | tr '-' '_')
+            echo "Building $lambda..."
+
+            # Create per-Lambda staging dir with deps + shared + specific code
+            LAMBDA_STAGE=$(mktemp -d)
+            cp -r "$BUILD_DIR"/. "$LAMBDA_STAGE/"
+            cp -r src/shared "$LAMBDA_STAGE/"
+            cp -r "src/${lambda_dir}" "$LAMBDA_STAGE/"
+
+            # Create zip (exclude __pycache__ and .pyc files)
+            cd "$LAMBDA_STAGE"
+            zip -r "$GITHUB_WORKSPACE/${{ inputs.working-directory }}/dist/${lambda}.zip" . \
+              -x "*.pyc" \
+              -x "*__pycache__*" \
+              -x "*.pyo" \
+              -x "*.pyd" \
+              -x "tests/*" \
+              -x "*.egg-info/*"
+            cd -
+
+            echo "Built dist/${lambda}.zip"
+          done
+
+          # List built packages
+          ls -lh dist/
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: arn:aws:iam::744376746644:role/github-actions-sosoka-labs
+          aws-region: us-west-2
+
+      - name: Upload Lambda packages to S3
+        run: aws s3 sync ${{ inputs.working-directory }}/dist/ s3://sosoka-labs-build-artifacts/${{ github.event.repository.name }}/${{ github.run_id }}/lambda-packages/
